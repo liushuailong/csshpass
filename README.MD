@@ -148,6 +148,37 @@ int main(int args, char *argv[]) {
 }
 ```
 
+### 结构跳转
+
+#### 循环语句
+在c语言中只使用以下两种循环，do...while循环不使用  
+循环控制：break/continue  
+不要使用goto语句  
+
+```c
+// while 循环
+#include <stdio.h>
+int main(int args, char *argv[]) {
+    int num  = 10;
+    while (num > 0) {
+        printf("num: %d\n", num);
+        num -= 1; // 统一一律不使用自增自减运算符
+    }
+    return 0;
+}
+```
+
+```c
+// for 循环
+#include <stdio.h>
+int main(int args, char *argv[]) {
+    for (int i = 0; i <= 10; i +=1) {
+        printf("i = %d\n", i);
+    }
+    return 0;
+}
+
+```
 
 ### 如何使用gcc编译源代码
 ```bash
@@ -157,6 +188,22 @@ gcc test.c -o test
 
 ### 宏编成
 #### #define
+宏定义必须在一行
+```c
+#define TEST_VALUE 1
+```
+
+#### #ifdef
+条件编译
+```c
+#ifdef TEST_VALUE 
+#define TEST_VALUE 1
+// 条件编译, 如果在当前环境中已经定义过TEST_VALUE则跳过编译当前代码块，否则编译当前代码块
+#endif
+```
 
 
 ### 统一C和Rust的编成风格，以Rust为主
+
+### stdio.h 标准库的学习
+
