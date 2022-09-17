@@ -1,18 +1,25 @@
+/*
+ * package string
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
+#include <assert.h>
 //#include <getopt.h>
 
 // 定义默认的sshpass环境变量名称 SSHPASS
 #define DEFAULT_ENV_PASSWORD "SSHPASS"
+#define PACKAGE_STRING "csshpass package 2022 learn for test"
+#define PASSWORD_PROMPT "password prompt"
 // 定义并初始化了一个结构体实例
 // 全局结构体
 struct {
 	enum {
         PWT_STDIN, // 标准输入
         PWT_FILE, // 文件
-        PWT_FD, // todo: ??? 哪个是SSHPASS环境变量提供密码的类型
-        PWT_PASS // todo: ???
+        PWT_FD, // 文件描述符
+        PWT_PASS // SSHPASS环境变量提供密码的类型
     } pwtype; // note: 密码来源的类型
 	union {
 		const char *filename;
@@ -38,6 +45,7 @@ enum program_return_codes {
 
 // c语言编译是按顺序的，函数在使用前需要定义或者申明
 int parse_options(int argc, char *argv);
+static void hide_password();
 
 
 int main(int argc, char *argv[]) {
@@ -80,7 +88,7 @@ int parse_options(int argc, char *argv) {
             case 'P':
                 args.pwprompt = optarg;
                 break;
-            case 'V':
+            case 'v':
                 args.verbose++;
                 break;
             case 'e':
@@ -91,13 +99,41 @@ int parse_options(int argc, char *argv) {
                 }
                 args.orig_password = getenv(optarg); // note: 从环境变量中获取变量名为SSHPASS的值，如果没有则返回NULL
                 if (args.orig_password == NULL) {
-                    fprintf(stderr, "csshpass: -e option given but \"\s\" environment variable is not set.\n", optarg);
+                    fprintf(stderr, "csshpass: -e option given but \"%s\" environment variable is not set.\n", optarg);
                     error=RETURN_INVALID_ARGUMENTS;
                 }
                 hide_password(); // todo: ???
                 unsetenv(optarg); // note: 从环境变量中移除名字为SSHPASS的变量
+                break;
+            case '?':
+            case ':':
+                error = RETURN_INVALID_ARGUMENTS;
+                break;
+            case 'h':
+                error = RETURN_NOERROR;
+                break;
+            case 'V':
+                printf("%s\n"
+                       "(C) 2022 sshpass copy\n"
+                       "Using \"%s\" as the default password prompt indicator.\n",
+                       PACKAGE_STRING, PASSWORD_PROMPT); // todo: ???
+                exit(0);
+                break;
         }
     }
-
-
+    if (error >= 0) {
+        return -(error + 1);
+    } else {
+        return optind;
     }
+}
+
+static void hide_password() {
+    assert(args.pwsrc.password == NULL);
+    args.pwsrc.password = strdup(args.orig_password); // note: string.h 库中的函数
+    while(*args.orig_password != '\0') {
+        *args.orig_password = '\0';
+        ++args.orig_password;
+    }
+    args.orig_password = NULL;
+}
