@@ -12,11 +12,58 @@ rust实现sshpass功能打下基础，具体实现将会在ccc项目中完成。
 ## c语言知识点
 
 ### 向程序传递参数
+args: 参数的个数
+argv： 参数组成的数组
 ```c
 int main(int args, char *argv[]) {}
 ```
-args: 参数的个数
-argv： 参数组成的数组
+
+### 解析命令行传递的参数
+```c
+#include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+int main(int argc, char *argv[])
+{
+    int flags, opt;
+    int nsecs, tfnd;
+
+    nsecs = 0;
+    tfnd = 0;
+    flags = 0;
+    while ((opt = getopt(argc, argv, "nt:")) != -1) {
+        switch (opt) {
+        case 'n':
+            flags = 1;
+            break;
+        case 't':
+            nsecs = atoi(optarg);
+            tfnd = 1;
+            break;
+        default: /* '?' */
+            fprintf(stderr, "Usage: %s [-t nsecs] [-n] name\n",
+                    argv[0]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    printf("flags=%d; tfnd=%d; nsecs=%d; optind=%d\n",
+            flags, tfnd, nsecs, optind);
+
+    if (optind >= argc) {
+        fprintf(stderr, "Expected argument after options\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("name argument = %s\n", argv[optind]);
+
+    /* Other code omitted */
+
+    exit(EXIT_SUCCESS);
+}
+
+```
 
 ### 向终端打印字符串
 

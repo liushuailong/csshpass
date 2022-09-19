@@ -6,12 +6,33 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/ioctl.h>
+#include <signal.h>
+#ifdef HAVE_TERMIOS_H
+#include <termios.h>
+#endif
+#include <sys/select.h>
+#include <fcntl.h>
 //#include <getopt.h>
 
 // 定义默认的sshpass环境变量名称 SSHPASS
 #define DEFAULT_ENV_PASSWORD "SSHPASS"
 #define PACKAGE_STRING "csshpass package 2022 learn for test"
 #define PASSWORD_PROMPT "password prompt"
+#define PACKAGE_NAME "csshpass"
+
+#ifndef HAVE_POSIX_OPENPT
+int posix_openpt(int flags) {
+    return open("/dev/ptmx", flags);
+}
+#endif
+
+static int ourtty;
+static int masterpt;
+
+int childpid;
+int termsig;
+
 // 定义并初始化了一个结构体实例
 // 全局结构体
 struct {
@@ -27,7 +48,7 @@ struct {
 		const char *password;
 	} pwsrc;
 	const char *pwprompt;
-	int verbose;
+	int verbose; // todo: 这个字段是干什么的？
 	char *orig_password;
 } args;
 
@@ -44,19 +65,53 @@ enum program_return_codes {
 };
 
 // c语言编译是按顺序的，函数在使用前需要定义或者申明
-int parse_options(int argc, char *argv);
+int parse_options(int argc, char *argv[]);
 static void hide_password();
+static void show_help();
+int run_program(int argc, char *argv[]);
+void sigchld_handler(int signum);
 
+static void show_help() {
+    // fixme: 有没有更好的字符串格式化方法
+    printf("Usage: " PACKAGE_NAME " [-f|-d|-p|-e] [-hV] Command parameters\n"
+                                  "    -f filename Take password to use from file\n"
+                                  "    -d number   Use Number as file descriptor for getting password\n"
+                                  "    -e          Password is passed as env-var \"SSHPASS\"\n"
+                                  "    With no parameters - password will be taken from stdin\n\n"
+                                  "    -P prompt   Which string should sshpass search for to detect a password prompt\n"
+                                  "    -v          Be verbose about what you're dong\n"
+                                  "    -h          Show help (this screen)\n"
+                                  "    -V          Print version information\n"
+                                  "At most one of -f, -d, -p or -e should be used\n"
+    );
+}
 
 int main(int argc, char *argv[]) {
 	// 解析参数
 	int opt_offset = parse_options(argc, (char *) argv);
 
-    printf("Hello, World!\n");
-    return 0;
+
+    // note: 当 opt_offset 小于 0 时 opt_offset 代表的是错误的代号
+    // note: 处理函数输入参数错误
+    if (opt_offset < 0) {
+        fprintf(stderr, "Use \"csshpass -h\" to get help\n");
+        return -(opt_offset + 1); // note: 原文注释的 -1 --> 0, -2 --> 1, 这又代表什么意思？ 这个值代表的是返回的类型，和枚举 program_return_codes 对应
+    }
+
+    // note: 当 opt_offset 等于 0 时
+    if (opt_offset < 1) {
+        show_help();
+        return 0;
+    }
+
+    if (args.orig_password != NULL) {
+        hide_password();
+    }
+
+    return run_program(argc-opt_offset, argv+opt_offset); // todo: 注意参数
 }
 
-int parse_options(int argc, char *argv) {
+int parse_options(int argc, char *argv[]) {
 	int error = -1; // 错误返回值
 	int opt;
 
@@ -102,7 +157,7 @@ int parse_options(int argc, char *argv) {
                     fprintf(stderr, "csshpass: -e option given but \"%s\" environment variable is not set.\n", optarg);
                     error=RETURN_INVALID_ARGUMENTS;
                 }
-                hide_password(); // todo: ???
+                hide_password(); // note: ??? 将 orig_password 中的密码复制给 pwsrc，并将 orig_password 置为空；
                 unsetenv(optarg); // note: 从环境变量中移除名字为SSHPASS的变量
                 break;
             case '?':
@@ -112,28 +167,43 @@ int parse_options(int argc, char *argv) {
             case 'h':
                 error = RETURN_NOERROR;
                 break;
-            case 'V':
+            case 'V': // note: 打印版本信息
                 printf("%s\n"
                        "(C) 2022 sshpass copy\n"
                        "Using \"%s\" as the default password prompt indicator.\n",
                        PACKAGE_STRING, PASSWORD_PROMPT); // todo: ???
                 exit(0);
-                break;
         }
     }
+
+    // note: 这个函数返回代表错误类型的数字或者代表下一次调用getopt函数时返回参数在argv中的下标
     if (error >= 0) {
-        return -(error + 1);
+        return -(error + 1); // note: 将错误的返回值转化后返回主函数
     } else {
-        return optind;
+        return optind; // note: 这个值代表的是什么意思？？？ 下一次调用 getopt 时，从 optind 存储的位置处重新开始检查选项, 那也就是说getopt函数的输入类型都是在argv数组前面的。
     }
 }
 
 static void hide_password() {
-    assert(args.pwsrc.password == NULL);
-    args.pwsrc.password = strdup(args.orig_password); // note: string.h 库中的函数
+    assert(args.pwsrc.password == NULL); // note: 判断password不为空
+    args.pwsrc.password = strdup(args.orig_password); // note: string.h 库中的函数 复制字符串
+    // note: 下面这个while的作用是什么？ origin_password是一个指向字符串类型的指针，下面的while循环是将orig_password指向的字符串的每一位都置空。
+    // todo: 那问题来了，为什么要置空？
     while(*args.orig_password != '\0') {
         *args.orig_password = '\0';
         ++args.orig_password;
     }
-    args.orig_password = NULL;
+    args.orig_password = NULL; // note: 将args的orig_password置为空
 }
+
+int run_program(int argc, char *argv[]) {
+    struct winsize ttysize; // note: struct winsize for lib sys/ioctl.h
+    signal( SIGCHLD, sigchld_handler ); // note: signal 函数来自库 signal.h
+    masterpt = posix_openpt(O_RDWR); // note: O_RDWR 来自库 fcntl.h
+
+    
+
+}
+
+// note: 不做任何事情，只是确保当信号到达时可以正常终止
+void sigchld_handler(int signum) {}
