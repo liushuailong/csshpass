@@ -254,3 +254,49 @@ gcc test.c -o test
 
 ### stdio.h 标准库的学习
 
+### fcntl.h 标准库的学习
+#### fcntl函数
+针对文件描述符提供控制
+fcntl函数有5种功能：
+1. 复制一个现有的描述符(cmd=F_DUPFD).
+2. 获得／设置文件描述符标记(cmd=F_GETFD或F_SETFD).
+3. 获得／设置文件状态标记(cmd=F_GETFL或F_SETFL).
+4. 获得／设置异步I/O所有权(cmd=F_GETOWN或F_SETOWN).
+5. 获得／设置记录锁(cmd=F_GETLK , F_SETLK或F_SETLKW).
+
+#### execvp函数
+在程序中执行数组中的命令来执行。
+```text
+int execvp(const char *file, char * const argv []);
+execvp()会从环境变量所指的目录中查找符合参数 file 的文件名, 找到后执行该文件, 然后将第二个参数argv 传给该执行的文件。
+如果执行成功则函数不会返回, 执行失败则直接返回-1。
+```
+test.c
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+void main(int argc, char *argv[]) {
+	char **new_argv=malloc(sizeof(char *)*(argc));
+    int i;
+    for (i=0;i<argc-1;++i) {
+        new_argv[i] = argv[i + 1];
+    }
+    new_argv[i] = NULL;
+	pid_t pid = fork();
+	if (pid == 0){
+		execvp(new_argv[0], new_argv);
+		exit(1);
+	} else {
+		wait(pid);
+	}
+}
+```
+```bash
+>>>./test.out ls -rlt
+总用量 24
+-rw-r--r-- 1 slliu slliu   402 11月 29 11:32 test.c
+-rwxr-xr-x 1 slliu slliu 16808 11月 29 11:33 a.out
+```
